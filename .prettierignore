@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/test-results
+**/playwright-report
+.tools
+mobile
+contracts/openapi.json
+contracts/generated
+backend/src/generated
+pnpm-lock.yaml
+docs
