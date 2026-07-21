@@ -1,0 +1,43 @@
+{
+  "name": "controle-estoque",
+  "private": true,
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=24.15 <25"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:down": "node scripts/dev.mjs --down",
+    "pilot": "node --env-file-if-exists=.env scripts/pilot.mjs",
+    "dev:backend": "pnpm --filter @controle-estoque/backend dev",
+    "dev:worker": "pnpm --filter @controle-estoque/backend dev:worker",
+    "dev:frontend": "pnpm --filter @controle-estoque/frontend dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "prettier --check . && eslint backend/src backend/test scripts && pnpm --filter @controle-estoque/frontend lint && node scripts/check-architecture.mjs",
+    "format": "prettier --write .",
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @controle-estoque/backend test:integration",
+    "db:migrate": "pnpm --filter @controle-estoque/backend db:migrate",
+    "db:seed": "pnpm --filter @controle-estoque/backend db:seed",
+    "contracts:generate": "node scripts/contracts.mjs",
+    "contracts:check": "node scripts/contracts.mjs --check",
+    "test:e2e": "pnpm --filter @controle-estoque/frontend exec playwright test",
+    "store:provision": "pnpm --filter @controle-estoque/backend build && node --env-file-if-exists=.env backend/dist/bootstrap/identity-admin.js provision-store",
+    "store:recover-owner": "pnpm --filter @controle-estoque/backend build && node --env-file-if-exists=.env backend/dist/bootstrap/identity-admin.js recover-owner",
+    "platform:admin": "pnpm --filter @controle-estoque/backend build && node --env-file-if-exists=.env backend/dist/bootstrap/platform-admin.js",
+    "inventory:audit": "pnpm --filter @controle-estoque/backend build && node --env-file-if-exists=.env backend/dist/bootstrap/inventory-audit.js",
+    "test:load": "pnpm --filter @controle-estoque/backend build && node --env-file-if-exists=.env scripts/measure-import.mjs",
+    "format:check": "prettier --check .",
+    "test:volume": "pnpm --filter @controle-estoque/backend build && node --env-file-if-exists=.env scripts/measure-volume.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.0",
+    "eslint": "10.11.0",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.9",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1"
+  }
+}

@@ -1,0 +1,27 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.gradle/
+**/build/
+local.properties
+*.jks
+*.keystore
+.tools/
+playwright-report/
+test-results/
+docs/
+graphify-out/
+
+# Saída do servidor de linguagem Java/Kotlin do VS Code
+mobile/**/bin/
+
+# Folha de códigos de barras gerada por scripts/barcodes.mjs
+barcodes.html
+barcodes/
+
+# Anotações só desta máquina, como os acessos do ambiente local (ACESSOS.local.md)
+*.local.md

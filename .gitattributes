@@ -1,0 +1,9 @@
+# Código gerado: recolhido nos diffs e fora das estatísticas de linguagem.
+backend/src/generated/** linguist-generated=true
+contracts/generated/** linguist-generated=true
+contracts/openapi.json linguist-generated=true
+mobile/core/network/src/main/kotlin/br/com/estoque/core/network/generated/** linguist-generated=true
+
+# Scripts executados em Linux (containers, CI): LF mesmo em checkout no Windows.
+*.sh text eol=lf
+mobile/gradlew text eol=lf
