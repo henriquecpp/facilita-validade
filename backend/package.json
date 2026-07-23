@@ -1,0 +1,52 @@
+{
+  "name": "@controle-estoque/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "dev": "node ../scripts/dev-server.mjs api",
+    "dev:worker": "node ../scripts/dev-server.mjs worker",
+    "test": "vitest run --exclude 'test/integration/**'",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "db:migrate": "pnpm build && node --env-file-if-exists=../.env dist/bootstrap/migrate.js",
+    "db:seed": "pnpm build && node --env-file-if-exists=../.env dist/bootstrap/seed.js",
+    "contracts:generate": "pnpm build && node dist/bootstrap/openapi.js",
+    "db:pull": "node ../scripts/prisma-pull.mjs",
+    "prisma:generate": "prisma generate"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/rate-limit": "11.2.0",
+    "@nestjs/common": "12.1.0",
+    "@nestjs/core": "12.1.0",
+    "@nestjs/platform-fastify": "12.1.0",
+    "@nestjs/swagger": "12.0.2",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "argon2": "0.45.1",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "fastify": "5.12.5",
+    "jose": "6.2.12",
+    "nodemailer": "10.0.11",
+    "pg": "8.23.0",
+    "pg-boss": "12.35.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "12.1.0",
+    "@swc/core": "1.16.2",
+    "@testcontainers/postgresql": "12.1.0",
+    "@types/node": "24.19.0",
+    "@types/pg": "8.23.1",
+    "prisma": "7.10.0",
+    "testcontainers": "12.1.0",
+    "typescript": "5.9.3",
+    "unplugin-swc": "2.0.0",
+    "vitest": "5.0.2"
+  }
+}
