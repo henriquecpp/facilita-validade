@@ -1,0 +1,789 @@
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  previewFeatures        = ["partialIndexes"]
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+  moduleFormat           = "esm"
+  runtime                = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model audit_events {
+  id         String   @id @db.Uuid
+  store_id   String   @db.Uuid
+  actor_id   String?  @db.Uuid
+  action     String
+  entity_id  String?  @db.Uuid
+  detail     Json     @default("{}")
+  created_at DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores     stores   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+  @@index([created_at(sort: Desc), id(sort: Desc)], map: "audit_events_platform", where: raw("(action ~~ 'PLATFORM\\_%'::text)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model auth_sessions {
+  id                 String               @id @db.Uuid
+  store_id           String               @db.Uuid
+  user_id            String               @db.Uuid
+  client             String
+  restricted         Boolean              @default(false)
+  expires_at         DateTime             @db.Timestamptz(6)
+  revoked_at         DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  revoked_reason     String?
+  stores             stores               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store_users        store_users          @relation(fields: [store_id, user_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  push_subscriptions push_subscriptions[]
+  refresh_tokens     refresh_tokens[]
+
+  @@unique([store_id, id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model command_receipts {
+  store_id        String   @db.Uuid
+  operation       String
+  idempotency_key String   @db.Uuid
+  principal_id    String   @db.Uuid
+  payload_hash    String
+  result          Json
+  created_at      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores          stores   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([store_id, operation, idempotency_key])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model count_lines {
+  id             String         @id @db.Uuid
+  store_id       String         @db.Uuid
+  session_id     String         @db.Uuid
+  expires_on     DateTime       @db.Date
+  lot_code       String?
+  quantity       Int
+  note           String?
+  created_at     DateTime       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores         stores         @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  count_sessions count_sessions @relation(fields: [store_id, session_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model count_sessions {
+  id               String            @id @db.Uuid
+  store_id         String            @db.Uuid
+  product_id       String            @db.Uuid
+  actor_id         String            @db.Uuid
+  status           String            @default("COUNTING")
+  version          Int               @default(1)
+  started_at       DateTime?         @db.Timestamptz(6)
+  cutoff_at        DateTime?         @db.Timestamptz(6)
+  cancel_reason    String?
+  created_at       DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  lines_saved_at   DateTime?         @db.Timestamptz(6)
+  count_lines      count_lines[]
+  store_users      store_users       @relation(fields: [store_id, actor_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores           stores            @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products         products          @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_epochs inventory_epochs[]
+
+  @@unique([store_id, id])
+  @@unique([store_id, product_id, id])
+  @@unique([store_id, product_id], map: "one_active_count", where: raw("(status = ANY (ARRAY['DRAFT'::text, 'COUNTING'::text]))"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model device_pairings {
+  id                                                          String      @id @db.Uuid
+  store_id                                                    String      @db.Uuid
+  user_id                                                     String      @db.Uuid
+  token_hash                                                  String      @unique
+  issued_by                                                   String      @db.Uuid
+  expires_at                                                  DateTime    @db.Timestamptz(6)
+  consumed_at                                                 DateTime?   @db.Timestamptz(6)
+  created_at                                                  DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores                                                      stores      @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store_users_device_pairings_store_id_issued_byTostore_users store_users @relation("device_pairings_store_id_issued_byTostore_users", fields: [store_id, issued_by], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  store_users_device_pairings_store_id_user_idTostore_users   store_users @relation("device_pairings_store_id_user_idTostore_users", fields: [store_id, user_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+  @@index([store_id, created_at(sort: Desc)], map: "device_pairings_recent")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model has constraints using non-default deferring rules and requires additional setup for migrations. Visit https://pris.ly/d/constraint-deferring for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model expiry_levels {
+  id                     String                  @id @db.Uuid
+  store_id               String                  @db.Uuid
+  name                   String
+  min_days               Int?
+  max_days               Int?
+  color                  String
+  notify                 Boolean
+  created_at             DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores                 stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  level_push_preferences level_push_preferences?
+  push_schedule_claims   push_schedule_claims[]
+
+  @@unique([store_id, id])
+  @@unique([store_id, max_days], map: "expiry_levels_store_limit_key")
+  @@index([store_id, min_days], map: "expiry_levels_by_store")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model import_batches {
+  id                      String                  @id @db.Uuid
+  store_id                String                  @db.Uuid
+  connection_id           String                  @db.Uuid
+  external_batch_id       String
+  payload_hash            String
+  kind                    String
+  status                  String                  @default("RECEIVED")
+  payload                 Json
+  errors                  Json                    @default("[]")
+  created_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  completed_at            DateTime?               @db.Timestamptz(6)
+  integration_connections integration_connections @relation(fields: [store_id, connection_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores                  stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  integration_events      integration_events[]
+
+  @@unique([store_id, connection_id, external_batch_id])
+  @@unique([store_id, id])
+  @@index([store_id, completed_at(sort: Desc)], map: "import_batches_last_completed")
+  @@index([store_id, created_at], map: "import_batches_open", where: raw("(status = ANY (ARRAY['RECEIVED'::text, 'PROCESSING'::text]))"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model integration_connections {
+  id                 String               @id @db.Uuid
+  store_id           String               @db.Uuid
+  name               String
+  active             Boolean              @default(true)
+  created_at         DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  import_batches     import_batches[]
+  stores             stores               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  integration_events integration_events[]
+  integration_keys   integration_keys[]
+  pagonet_sources    pagonet_sources?
+  products           products[]
+
+  @@unique([store_id, id])
+  @@unique([store_id, name])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model integration_events {
+  id                      String                  @id @db.Uuid
+  store_id                String                  @db.Uuid
+  connection_id           String                  @db.Uuid
+  batch_id                String                  @db.Uuid
+  external_event_id       String
+  payload_hash            String
+  payload                 Json
+  status                  String                  @default("RECEIVED")
+  error_code              String?
+  received_at             DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  import_batches          import_batches          @relation(fields: [store_id, batch_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  integration_connections integration_connections @relation(fields: [store_id, connection_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores                  stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stock_movements         stock_movements?
+
+  @@unique([store_id, connection_id, external_event_id])
+  @@unique([store_id, id])
+  @@index([store_id, batch_id], map: "integration_events_by_batch")
+  @@index([store_id, connection_id, external_event_id], map: "integration_events_by_prefix")
+  @@index([store_id, batch_id], map: "integration_events_pending", where: raw("(status = ANY (ARRAY['PENDING_PRODUCT'::text, 'PENDING_REFERENCE'::text, 'PENDING_FUTURE'::text]))"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model integration_keys {
+  id                      String                  @id @db.Uuid
+  store_id                String                  @db.Uuid
+  connection_id           String                  @db.Uuid
+  selector                String                  @unique
+  secret_hash             String
+  scopes                  String[]
+  revoked_at              DateTime?               @db.Timestamptz(6)
+  created_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  integration_connections integration_connections @relation(fields: [store_id, connection_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores                  stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model inventory_checkpoints {
+  store_id         String           @db.Uuid
+  product_id       String           @db.Uuid
+  epoch_id         String           @db.Uuid
+  max_seq          BigInt
+  state            Json
+  created_at       DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores           stores           @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  inventory_epochs inventory_epochs @relation(fields: [store_id, product_id, epoch_id], references: [store_id, product_id, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([store_id, product_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model inventory_epochs {
+  id                    String                 @id @db.Uuid
+  store_id              String                 @db.Uuid
+  product_id            String                 @db.Uuid
+  session_id            String                 @db.Uuid
+  cutoff_at             DateTime               @db.Timestamptz(6)
+  count_started_at      DateTime               @db.Timestamptz(6)
+  closed_at             DateTime?              @db.Timestamptz(6)
+  inventory_checkpoints inventory_checkpoints[]
+  stores                stores                 @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  count_sessions        count_sessions         @relation(fields: [store_id, product_id, session_id], references: [store_id, product_id, id], onDelete: NoAction, onUpdate: NoAction)
+  movement_allocations  movement_allocations[]
+  product_inventory     product_inventory[]
+  projection_runs       projection_runs[]
+  stock_records         stock_records[]
+
+  @@unique([store_id, id])
+  @@unique([store_id, product_id, id])
+  @@unique([store_id, product_id], map: "one_current_epoch", where: raw("(closed_at IS NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model level_push_preferences {
+  store_id       String        @db.Uuid
+  level_id       String        @db.Uuid
+  immediate      Boolean       @default(true)
+  interval_hours Int?
+  daily_time     String?
+  stores         stores        @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  expiry_levels  expiry_levels @relation(fields: [store_id, level_id], references: [store_id, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([store_id, level_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model movement_allocations {
+  store_id         String           @db.Uuid
+  epoch_id         String           @db.Uuid
+  movement_id      String           @db.Uuid
+  record_id        String           @db.Uuid
+  quantity         Int
+  revision         BigInt
+  inventory_epochs inventory_epochs @relation(fields: [store_id, epoch_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores           stores           @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stock_movements  stock_movements  @relation(fields: [store_id, movement_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stock_records    stock_records    @relation(fields: [store_id, record_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([store_id, epoch_id, movement_id, record_id])
+  @@index([store_id, movement_id], map: "movement_allocations_by_movement")
+  @@index([store_id, record_id], map: "movement_allocations_by_record")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model movement_resolutions {
+  id              String          @id @db.Uuid
+  store_id        String          @db.Uuid
+  product_id      String          @db.Uuid
+  movement_id     String          @db.Uuid
+  actor_id        String          @db.Uuid
+  payload         Json
+  reason          String
+  created_at      DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  store_users     store_users     @relation(fields: [store_id, actor_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores          stores          @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stock_movements stock_movements @relation(fields: [store_id, movement_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  products        products        @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notification_deliveries {
+  id                  String    @id @db.Uuid
+  store_id            String    @db.Uuid
+  channel             String
+  kind                String
+  digest_date         DateTime  @db.Date
+  recipients          String[]
+  status              String
+  attempts            Int       @default(1)
+  alert_count         Int       @default(0)
+  provider_message_id String?
+  last_error          String?
+  next_attempt_at     DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores              stores    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, channel, kind, digest_date])
+  @@unique([store_id, id])
+  @@index([store_id, created_at(sort: Desc)], map: "notification_deliveries_recent")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notification_reads {
+  store_id        String        @db.Uuid
+  notification_id String        @db.Uuid
+  user_id         String        @db.Uuid
+  revision        Int
+  stores          stores        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  notifications   notifications @relation(fields: [store_id, notification_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  store_users     store_users   @relation(fields: [store_id, user_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([store_id, notification_id, user_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notifications {
+  id                   String               @id @db.Uuid
+  store_id             String               @db.Uuid
+  product_id           String               @db.Uuid
+  record_id            String               @db.Uuid
+  type                 String
+  level                String
+  message              String
+  revision             Int                  @default(1)
+  active               Boolean              @default(true)
+  created_at           DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  push_pending         Boolean              @default(false)
+  depleted_quantity    Int?
+  depleted_movement_id String?              @db.Uuid
+  notification_reads   notification_reads[]
+  stores               stores               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products             products             @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stock_records        stock_records        @relation(fields: [store_id, record_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+  @@unique([store_id, record_id, type])
+  @@index([store_id, product_id], map: "notifications_active_by_product", where: raw("active"))
+  @@index([store_id, created_at(sort: Desc), id(sort: Desc)], map: "notifications_active_recent", where: raw("active"))
+  @@index([store_id], map: "notifications_push_pending", where: raw("push_pending"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model pagonet_sources {
+  store_id                String                  @id @db.Uuid
+  connection_id           String                  @db.Uuid
+  active                  Boolean                 @default(true)
+  catalog_requested_at    DateTime?               @db.Timestamptz(6)
+  catalog_attempted_at    DateTime?               @db.Timestamptz(6)
+  catalog_synced_at       DateTime?               @db.Timestamptz(6)
+  catalog_hash            String?
+  catalog_products        Int?
+  sales_attempted_at      DateTime?               @db.Timestamptz(6)
+  sales_synced_at         DateTime?               @db.Timestamptz(6)
+  sales_through           String?
+  sales_state             Json                    @default("{}")
+  last_error              String?
+  last_error_at           DateTime?               @db.Timestamptz(6)
+  created_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  sales_catchup           Boolean                 @default(false)
+  history_attempted_at    DateTime?               @db.Timestamptz(6)
+  history_error           String?
+  history_error_at        DateTime?               @db.Timestamptz(6)
+  integration_connections integration_connections @relation(fields: [store_id, connection_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores                  stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, connection_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model password_reset_tokens {
+  id          String      @id @db.Uuid
+  store_id    String      @db.Uuid
+  user_id     String      @db.Uuid
+  token_hash  String      @unique
+  expires_at  DateTime    @db.Timestamptz(6)
+  consumed_at DateTime?   @db.Timestamptz(6)
+  stores      stores      @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store_users store_users @relation(fields: [store_id, user_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model product_barcodes {
+  store_id   String   @db.Uuid
+  product_id String   @db.Uuid
+  barcode    String
+  stores     stores   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products   products @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([store_id, barcode])
+  @@index([store_id, product_id], map: "product_barcodes_by_product")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model product_daily_sales {
+  store_id   String   @db.Uuid
+  day        DateTime @db.Date
+  product_id String   @db.Uuid
+  units      Decimal  @db.Decimal(14, 3)
+  stores     stores   @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products   products @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([store_id, day, product_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model product_inventory {
+  store_id               String            @db.Uuid
+  product_id             String            @db.Uuid
+  tracking_status        String            @default("UNTRACKED")
+  epoch_id               String?           @db.Uuid
+  input_revision         BigInt            @default(0)
+  applied_input_revision BigInt            @default(0)
+  projection_revision    BigInt            @default(0)
+  projected_at           DateTime?         @db.Timestamptz(6)
+  count_window_quantity  BigInt            @default(0)
+  stores                 stores            @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_epochs       inventory_epochs? @relation(fields: [store_id, product_id, epoch_id], references: [store_id, product_id, id], onDelete: NoAction, onUpdate: NoAction)
+  products               products          @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([store_id, product_id])
+  @@index([store_id], map: "product_inventory_stale", where: raw("(input_revision > applied_input_revision)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model product_sales_rates {
+  store_id     String   @db.Uuid
+  product_id   String   @db.Uuid
+  daily_sales  Decimal? @db.Decimal(14, 4)
+  history_days Decimal  @db.Decimal(6, 2)
+  updated_at   DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores       stores   @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products     products @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([store_id, product_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model products {
+  id                        String                  @id @db.Uuid
+  store_id                  String                  @db.Uuid
+  integration_connection_id String                  @db.Uuid
+  external_product_id       String
+  description               String
+  photo_url                 String?
+  active                    Boolean                 @default(true)
+  unit                      String                  @default("UNIT")
+  erp_group                 String?
+  erp_category              String?
+  sale_price                Decimal?                @db.Decimal(12, 2)
+  erp_attributes            Json?
+  erp_hash                  String?
+  search_text               String?                 @default(dbgenerated("search_key(description)"))
+  count_sessions            count_sessions?
+  movement_resolutions      movement_resolutions[]
+  notifications             notifications[]
+  product_barcodes          product_barcodes[]
+  product_daily_sales       product_daily_sales[]
+  product_inventory         product_inventory?
+  product_sales_rates       product_sales_rates?
+  stores                    stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  integration_connections   integration_connections @relation(fields: [store_id, integration_connection_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  reconciliation_issues     reconciliation_issues[]
+  stock_movements           stock_movements[]
+
+  @@unique([store_id, id])
+  @@unique([store_id, integration_connection_id, external_product_id])
+  @@index([store_id, erp_group, erp_category], map: "products_by_category")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model projection_runs {
+  id               String           @id @db.Uuid
+  store_id         String           @db.Uuid
+  product_id       String           @db.Uuid
+  epoch_id         String           @db.Uuid
+  revision         BigInt
+  input_revision   BigInt
+  fingerprint      String
+  summary          Json
+  created_at       DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores           stores           @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_epochs inventory_epochs @relation(fields: [store_id, product_id, epoch_id], references: [store_id, product_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model push_preferences {
+  store_id             String  @id @db.Uuid
+  version              Int     @default(1)
+  daily_digest_enabled Boolean @default(true)
+  depleted_enabled     Boolean @default(true)
+  stores               stores  @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model push_schedule_claims {
+  store_id      String        @db.Uuid
+  level_id      String        @db.Uuid
+  schedule_key  String
+  created_at    DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores        stores        @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  expiry_levels expiry_levels @relation(fields: [store_id, level_id], references: [store_id, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([store_id, level_id, schedule_key])
+  @@index([store_id, created_at], map: "push_schedule_claims_recent")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model push_subscriptions {
+  id              String        @id @db.Uuid
+  store_id        String        @db.Uuid
+  user_id         String        @db.Uuid
+  session_id      String        @db.Uuid
+  kind            String
+  endpoint        String
+  p256dh          String?
+  auth            String?
+  failures        Int           @default(0)
+  last_success_at DateTime?     @db.Timestamptz(6)
+  created_at      DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at      DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores          stores        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  auth_sessions   auth_sessions @relation(fields: [store_id, session_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  store_users     store_users   @relation(fields: [store_id, user_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, endpoint])
+  @@unique([store_id, id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model reconciliation_issues {
+  id         String   @id @db.Uuid
+  store_id   String   @db.Uuid
+  product_id String   @db.Uuid
+  identity   String
+  code       String
+  detail     Json
+  status     String   @default("OPEN")
+  created_at DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores     stores   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products   products @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+  @@unique([store_id, product_id, identity])
+  @@index([store_id, status, created_at(sort: Desc), id(sort: Desc)], map: "reconciliation_issues_by_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model refresh_tokens {
+  id            String        @id @db.Uuid
+  store_id      String        @db.Uuid
+  session_id    String        @db.Uuid
+  token_hash    String        @unique
+  consumed_at   DateTime?     @db.Timestamptz(6)
+  expires_at    DateTime      @db.Timestamptz(6)
+  stores        stores        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  auth_sessions auth_sessions @relation(fields: [store_id, session_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model sales_days {
+  store_id String   @db.Uuid
+  day      DateTime @db.Date
+  items    Int
+  units    Decimal  @db.Decimal(16, 3)
+  read_at  DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stores   stores   @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([store_id, day])
+}
+
+model schema_migrations {
+  name       String   @id
+  hash       String
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stock_movements {
+  id                   String                 @id @db.Uuid
+  store_id             String                 @db.Uuid
+  product_id           String                 @db.Uuid
+  event_id             String?                @db.Uuid
+  occurred_at          DateTime               @db.Timestamptz(6)
+  payload              Json
+  seq                  BigInt                 @default(autoincrement())
+  record_ref           String?                @default(dbgenerated("((payload ->> 'stockRecordId'::text))::uuid")) @db.Uuid
+  movement_allocations movement_allocations[]
+  movement_resolutions movement_resolutions[]
+  integration_events   integration_events?    @relation(fields: [store_id, event_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores               stores                 @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products             products               @relation(fields: [store_id, product_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, event_id])
+  @@unique([store_id, id])
+  @@index([store_id, product_id, occurred_at], map: "movements_by_product")
+  @@index([store_id, record_ref], map: "stock_movements_by_record", where: raw("(record_ref IS NOT NULL)"))
+  @@index([store_id, product_id, seq], map: "stock_movements_by_seq")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stock_projections {
+  store_id      String        @db.Uuid
+  record_id     String        @db.Uuid
+  quantity      Int
+  revision      BigInt
+  expires_on    DateTime      @db.Date
+  launched      Int
+  sold          Int           @default(0)
+  written_off   Int           @default(0)
+  status        String        @default("PENDING")
+  stores        stores        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stock_records stock_records @relation(fields: [store_id, record_id], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([store_id, record_id])
+  @@index([store_id, record_id], map: "stock_projections_with_balance", where: raw("(quantity > 0)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stock_records {
+  id                                                         String                 @id @db.Uuid
+  store_id                                                   String                 @db.Uuid
+  product_id                                                 String                 @db.Uuid
+  epoch_id                                                   String                 @db.Uuid
+  origin                                                     String
+  expires_on                                                 DateTime               @db.Date
+  lot_code                                                   String?
+  initial_quantity                                           Int
+  note                                                       String?
+  available_at                                               DateTime               @db.Timestamptz(6)
+  allocation_priority_at                                     DateTime               @db.Timestamptz(6)
+  created_at                                                 DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  version                                                    Int                    @default(1)
+  created_by                                                 String?                @db.Uuid
+  deleted_at                                                 DateTime?              @db.Timestamptz(6)
+  deleted_by                                                 String?                @db.Uuid
+  movement_allocations                                       movement_allocations[]
+  notifications                                              notifications[]
+  stock_projections                                          stock_projections?
+  store_users_stock_records_store_id_created_byTostore_users store_users?           @relation("stock_records_store_id_created_byTostore_users", fields: [store_id, created_by], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  store_users_stock_records_store_id_deleted_byTostore_users store_users?           @relation("stock_records_store_id_deleted_byTostore_users", fields: [store_id, deleted_by], references: [store_id, id], onDelete: NoAction, onUpdate: NoAction)
+  stores                                                     stores                 @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_epochs                                           inventory_epochs       @relation(fields: [store_id, product_id, epoch_id], references: [store_id, product_id, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+  @@unique([store_id, product_id, id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model store_settings {
+  store_id              String   @id @db.Uuid
+  version               Int      @default(1)
+  alert_emails          String[] @default([])
+  digest_hour           Int      @default(7)
+  levels_version        Int      @default(1)
+  sales_forecast_alerts Boolean  @default(false)
+  stores                stores   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model store_users {
+  id                                                              String                  @id @db.Uuid
+  store_id                                                        String                  @db.Uuid
+  username                                                        String
+  username_normalized                                             String
+  password_hash                                                   String
+  role                                                            String
+  active                                                          Boolean                 @default(true)
+  must_change_password                                            Boolean                 @default(true)
+  credential_version                                              Int                     @default(1)
+  version                                                         Int                     @default(1)
+  created_at                                                      DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  auth_sessions                                                   auth_sessions[]
+  count_sessions                                                  count_sessions[]
+  device_pairings_device_pairings_store_id_issued_byTostore_users device_pairings[]       @relation("device_pairings_store_id_issued_byTostore_users")
+  device_pairings_device_pairings_store_id_user_idTostore_users   device_pairings[]       @relation("device_pairings_store_id_user_idTostore_users")
+  movement_resolutions                                            movement_resolutions[]
+  notification_reads                                              notification_reads[]
+  password_reset_tokens                                           password_reset_tokens[]
+  push_subscriptions                                              push_subscriptions[]
+  stock_records_stock_records_store_id_created_byTostore_users    stock_records[]         @relation("stock_records_store_id_created_byTostore_users")
+  stock_records_stock_records_store_id_deleted_byTostore_users    stock_records[]         @relation("stock_records_store_id_deleted_byTostore_users")
+  stores                                                          stores                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, id])
+  @@unique([store_id, username_normalized])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stores {
+  id                      String                    @id @db.Uuid
+  cnpj_normalized         String                    @unique
+  name                    String
+  timezone                String                    @default("America/Sao_Paulo")
+  active                  Boolean                   @default(true)
+  created_at              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  audit_events            audit_events[]
+  auth_sessions           auth_sessions[]
+  command_receipts        command_receipts[]
+  count_lines             count_lines[]
+  count_sessions          count_sessions[]
+  device_pairings         device_pairings[]
+  expiry_levels           expiry_levels[]
+  import_batches          import_batches[]
+  integration_connections integration_connections[]
+  integration_events      integration_events[]
+  integration_keys        integration_keys[]
+  inventory_checkpoints   inventory_checkpoints[]
+  inventory_epochs        inventory_epochs[]
+  level_push_preferences  level_push_preferences[]
+  movement_allocations    movement_allocations[]
+  movement_resolutions    movement_resolutions[]
+  notification_deliveries notification_deliveries[]
+  notification_reads      notification_reads[]
+  notifications           notifications[]
+  pagonet_sources         pagonet_sources?
+  password_reset_tokens   password_reset_tokens[]
+  product_barcodes        product_barcodes[]
+  product_daily_sales     product_daily_sales[]
+  product_inventory       product_inventory[]
+  product_sales_rates     product_sales_rates[]
+  products                products[]
+  projection_runs         projection_runs[]
+  push_preferences        push_preferences?
+  push_schedule_claims    push_schedule_claims[]
+  push_subscriptions      push_subscriptions[]
+  reconciliation_issues   reconciliation_issues[]
+  refresh_tokens          refresh_tokens[]
+  sales_days              sales_days[]
+  stock_movements         stock_movements[]
+  stock_projections       stock_projections[]
+  stock_records           stock_records[]
+  store_settings          store_settings?
+  store_users             store_users[]
+}
