@@ -1,0 +1,11 @@
+{
+  "externalBatchId": "fixture-catalog-v1",
+  "products": [
+    {
+      "externalProductId": "iogurte-001",
+      "description": "Iogurte natural 170g",
+      "barcodes": ["0007891000001"],
+      "active": true
+    }
+  ]
+}

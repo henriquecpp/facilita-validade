@@ -1,0 +1,38 @@
+{
+  "externalBatchId": "fixture-movements-v1",
+  "periodStart": "2026-09-27T00:00:00-03:00",
+  "periodEnd": "2026-09-28T00:00:00-03:00",
+  "events": [
+    {
+      "externalEventId": "sale:1:line:1",
+      "externalProductId": "iogurte-001",
+      "type": "SALE",
+      "quantity": 6,
+      "occurredAt": "2026-09-27T16:00:00-03:00"
+    },
+    {
+      "externalEventId": "scrap:1",
+      "externalProductId": "iogurte-001",
+      "type": "SCRAP",
+      "quantity": 1,
+      "lotCode": "B",
+      "expiresOn": "2026-10-15",
+      "occurredAt": "2026-09-27T17:00:00-03:00"
+    },
+    {
+      "externalEventId": "return:1",
+      "externalProductId": "iogurte-001",
+      "type": "RETURN_RECEIPT",
+      "quantity": 1,
+      "expiresOn": "2026-10-15",
+      "occurredAt": "2026-09-27T17:30:00-03:00"
+    },
+    {
+      "externalEventId": "void:1",
+      "externalProductId": "iogurte-001",
+      "type": "VOID_MOVEMENT",
+      "originalExternalEventId": "sale:1:line:1",
+      "occurredAt": "2026-09-27T18:00:00-03:00"
+    }
+  ]
+}
