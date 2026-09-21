@@ -1,0 +1,12 @@
+/.gradle/
+**/build/
+/local.properties
+/.idea/
+*.jks
+*.keystore
+# Chave de debug do projeto (senha pública do Android): ver app/build.gradle.kts.
+!/app/debug.keystore
+*.hprof
+/.kotlin/
+/dist/
+**/bin/
