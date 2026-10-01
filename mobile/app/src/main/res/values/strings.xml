@@ -1,0 +1,4 @@
+<resources>
+    <!-- Nome no ícone do aparelho e na lista de apps. -->
+    <string name="app_name">Facilita Validade</string>
+</resources>
