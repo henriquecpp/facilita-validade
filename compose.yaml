@@ -1,0 +1,155 @@
+# Ambiente local de desenvolvimento, na raiz do repositório. Credenciais exclusivamente locais.
+#
+#   Tudo — banco, migrations, API, worker, painel e SMTP:  docker compose up --build
+#   Só banco e SMTP (para os comandos pnpm dev:*):         docker compose up -d postgres mailpit
+#   Aplicativo Android (APK em mobile/dist/):              docker compose run --rm mobile
+#
+# O aplicativo roda no emulador ou no coletor, fora do Docker; o container só o compila e
+# testa. `pnpm dev` junta as duas coisas. Produção: infra/compose.production.yaml.
+name: controle-estoque
+
+x-backend-env: &backend-env
+  NODE_ENV: development
+  PORT: '3000'
+  DATABASE_URL: postgresql://app_runtime:local_runtime_only@postgres:5432/estoque
+  AUTH_DATABASE_URL: postgresql://app_auth:local_auth_only@postgres:5432/estoque
+  JWT_SECRET: local-development-secret-with-at-least-32-bytes
+  # O painel responde por localhost e por 127.0.0.1, e para o navegador são origens
+  # diferentes: o login web só aceita as que estiverem aqui. WEB_LAN_ORIGIN acrescenta o
+  # painel aberto pelo IP desta máquina (sem ela, a vírgula que sobra é ignorada).
+  WEB_ORIGIN: http://localhost:5174,http://127.0.0.1:5174,${WEB_LAN_ORIGIN:-}
+  SMTP_HOST: mailpit
+  SMTP_PORT: '1025'
+  SMTP_SECURE: 'false'
+  SMTP_FROM: Facilita Validade <alertas@estoque.local>
+  # Token da Bridge da Pagonet, um só para a aplicação (cada loja lê o próprio CNPJ). Vem do
+  # .env; vazio, a leitura da Pagonet fica desligada.
+  PAGONET_TOKEN: ${PAGONET_TOKEN:-}
+  # Notificações push do proprietário, vindas do .env; vazias, o push fica desligado.
+  # Painel (Web Push): gere as chaves com `node scripts/web-push-keys.mjs`.
+  WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+  WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
+  WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-}
+  # Coletor (Firebase Cloud Messaging): conta de serviço e dados do app Android no projeto.
+  FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+  FCM_APP_ID: ${FCM_APP_ID:-}
+  FCM_API_KEY: ${FCM_API_KEY:-}
+  FCM_SENDER_ID: ${FCM_SENDER_ID:-}
+  # No Docker Desktop (Windows/macOS) o bind mount não gera eventos de inotify no
+  # container: sem polling o tsc --watch nunca vê as edições e o hot reload morre.
+  TSC_WATCHFILE: DynamicPriorityPolling
+  TSC_WATCHDIRECTORY: DynamicPriorityPolling
+
+x-backend: &backend
+  image: controle-estoque-backend:dev
+  build:
+    context: .
+    dockerfile: infra/docker/backend.Dockerfile
+    target: dev
+  volumes:
+    - ./backend/src:/workspace/backend/src:ro
+    - ./backend/migrations:/workspace/backend/migrations:ro
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: estoque
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-local_admin_only}
+    ports:
+      - '127.0.0.1:54329:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d estoque']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # SMTP local: os e-mails de alerta aparecem em http://localhost:8025, nada sai da máquina.
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - '127.0.0.1:8025:8025'
+      - '127.0.0.1:1025:1025'
+
+  migrate:
+    <<: *backend
+    command: >-
+      sh -c "node node_modules/typescript/bin/tsc -p tsconfig.build.json
+      && node dist/bootstrap/migrate.js
+      && node dist/bootstrap/seed.js"
+    environment:
+      NODE_ENV: development
+      MIGRATION_DATABASE_URL: postgresql://postgres:${LOCAL_POSTGRES_PASSWORD:-local_admin_only}@postgres:5432/estoque
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *backend
+    environment: *backend-env
+    # API_BIND=0.0.0.0 expõe a API na rede local para um coletor físico.
+    ports:
+      - '${API_BIND:-127.0.0.1}:3001:3000'
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *backend
+    command: ['node', '../scripts/dev-server.mjs', 'worker']
+    environment: *backend-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_started }
+
+  frontend:
+    image: controle-estoque-frontend:dev
+    build:
+      context: .
+      dockerfile: infra/docker/frontend.Dockerfile
+      target: dev
+    environment:
+      VITE_DEV_API_TARGET: http://api:3000
+      # Mesmo motivo do backend: sem polling o HMR não vê edições vindas do host.
+      VITE_WATCH_POLLING: 'true'
+    # WEB_BIND=0.0.0.0 abre o painel na rede local, para um celular; junto, WEB_LAN_ORIGIN.
+    ports:
+      - '${WEB_BIND:-127.0.0.1}:5174:5174'
+    volumes:
+      - ./frontend/src:/workspace/frontend/src:ro
+      - ./contracts:/workspace/contracts:ro
+    depends_on:
+      api: { condition: service_started }
+
+  # Compila o aplicativo Android sem JDK nem SDK na máquina. Fica fora do `up` padrão: é
+  # um job, não um serviço, e a primeira execução baixa o SDK. Sem argumentos gera o APK
+  # de debug; outras tarefas do Gradle vão como argumentos, por exemplo
+  #   docker compose run --rm mobile testDebugUnitTest
+  # MOBILE_API_BASE_URL aponta o APK para outro servidor — no coletor físico, o IP desta
+  # máquina na rede da loja (http://192.168.x.x:3001/api/v1/, com API_BIND=0.0.0.0).
+  mobile:
+    profiles: [mobile]
+    image: controle-estoque-mobile:dev
+    build:
+      context: infra/docker
+      dockerfile: mobile.Dockerfile
+    environment:
+      API_BASE_URL: ${MOBILE_API_BASE_URL:-}
+    volumes:
+      - ./mobile:/src:ro
+      - ./mobile/dist:/out
+      # Os testes de domínio leem os fixtures compartilhados com o backend, um nível acima
+      # de mobile/; o container reproduz esse layout.
+      - ./contracts/fixtures:/work/contracts/fixtures:ro
+      # Cópia de trabalho, cache do Gradle e artefatos do Robolectric: persistem entre
+      # execuções, então a segunda compilação é incremental e não baixa nada de novo.
+      - mobile_work:/work
+      - mobile_gradle:/root/.gradle
+      - mobile_m2:/root/.m2
+
+volumes:
+  postgres_data:
+  mobile_work:
+  mobile_gradle:
+  mobile_m2:
