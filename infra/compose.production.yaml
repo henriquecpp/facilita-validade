@@ -1,0 +1,228 @@
+name: controle-estoque-production
+# Logs do Docker com rotação: sem limite, eles enchem o disco do servidor com o tempo.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: '5' }
+x-backend: &backend
+  <<: *logging
+  image: controle-estoque-backend:${RELEASE_TAG:?Defina RELEASE_TAG para identificar esta entrega}
+  build:
+    context: ..
+    dockerfile: infra/docker/backend.Dockerfile
+  init: true
+  read_only: true
+  user: '1000:1000'
+  tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  stop_grace_period: 60s
+  networks: [private]
+# Alertas por e-mail (Gmail por padrão). A senha de app fica em arquivo de secret.
+x-smtp: &smtp
+  SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_SECURE: ${SMTP_SECURE:-true}
+  SMTP_USER: ${SMTP_USER:?Informe a conta SMTP que envia os alertas}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+# Token da Bridge da Pagonet, um só para a aplicação: cada loja lê os dados do próprio CNPJ.
+# A API confere o token (painel da plataforma); o worker faz as leituras.
+x-integration: &integration
+  PAGONET_TOKEN_FILE: /run/secrets/pagonet_token
+# Notificações push do proprietário (opcionais; vazias, o push fica desligado). Painel: chaves
+# VAPID de `node scripts/web-push-keys.mjs`. Coletor: conta de serviço do Firebase e dados do
+# app Android no projeto. Ver docs/operacao.md.
+x-push: &push
+  WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+  WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
+  WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-}
+  FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+  FCM_APP_ID: ${FCM_APP_ID:-}
+  FCM_API_KEY: ${FCM_API_KEY:-}
+  FCM_SENDER_ID: ${FCM_SENDER_ID:-}
+services:
+  postgres:
+    <<: *logging
+    image: postgres:18.6-alpine
+    user: '70:70'
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: estoque
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres_password]
+    # Memória do banco para o servidor recomendado (4 GB de RAM; docs/deploy.md). Com 2 GB,
+    # defina POSTGRES_SHARED_BUFFERS=512MB e POSTGRES_EFFECTIVE_CACHE_SIZE=1GB no .env. O resto
+    # vale para disco SSD e para a carga do sistema: muitas consultas curtas (sem JIT), tabelas
+    # de vendas que crescem todo dia (autovacuum mais frequente) e aviso no log de consulta lenta.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-2560MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-16MB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - jit=off
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - autovacuum_vacuum_scale_factor=0.05
+      - -c
+      - autovacuum_analyze_scale_factor=0.02
+      - -c
+      - log_min_duration_statement=2000
+    # Consultas paralelas usam memória compartilhada; o padrão do Docker (64 MB) é pouco.
+    shm_size: 256mb
+    volumes: ['postgres_data:/var/lib/postgresql']
+    tmpfs: ['/var/run/postgresql:rw,uid=70,gid=70,mode=3775', '/tmp:rw,nosuid,size=64m']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d estoque']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    stop_grace_period: 60s
+    networks: [private]
+  migrate:
+    <<: *backend
+    profiles: [administration]
+    command: [dist/bootstrap/migrate.js]
+    environment:
+      NODE_ENV: production
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/migration_database_url
+    secrets: [migration_database_url]
+    depends_on:
+      postgres: { condition: service_healthy }
+  bootstrap-roles:
+    <<: *backend
+    profiles: [administration]
+    command: [bootstrap-roles.mjs]
+    environment:
+      NODE_ENV: production
+      MIGRATION_DATABASE_URL_FILE: /run/secrets/migration_database_url
+      DATABASE_URL_FILE: /run/secrets/database_url
+      AUTH_DATABASE_URL_FILE: /run/secrets/auth_database_url
+    secrets: [migration_database_url, database_url, auth_database_url]
+    depends_on:
+      postgres: { condition: service_healthy }
+  api:
+    <<: *backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      TRUST_PROXY_HOPS: 1
+      WEB_ORIGIN: ${WEB_ORIGIN:?Defina a origem HTTPS pública sem barra final}
+      DATABASE_URL_FILE: /run/secrets/database_url
+      AUTH_DATABASE_URL_FILE: /run/secrets/auth_database_url
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      <<: [*smtp, *integration, *push]
+    secrets: [database_url, auth_database_url, jwt_secret, smtp_password, pagonet_token]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+  worker:
+    <<: *backend
+    restart: unless-stopped
+    command: [dist/bootstrap/main-worker.js]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL_FILE: /run/secrets/database_url
+      AUTH_DATABASE_URL_FILE: /run/secrets/auth_database_url
+      <<: [*smtp, *integration, *push]
+    secrets: [database_url, auth_database_url, smtp_password, pagonet_token]
+    depends_on:
+      postgres: { condition: service_healthy }
+  # Painel (SPA) e proxy da API, só na rede interna: quem fala com a internet é o caddy.
+  frontend:
+    <<: *logging
+    image: controle-estoque-frontend:${RELEASE_TAG:?Defina RELEASE_TAG}
+    build:
+      context: ..
+      dockerfile: infra/docker/frontend.Dockerfile
+    user: '101:101'
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, --quiet, --output-document=/dev/null, http://127.0.0.1:8080/healthz]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [private, edge]
+  # Porta de entrada pública (80 e 443): HTTPS automático com Let's Encrypt, renovado sozinho, e
+  # http:// redirecionado para https://. O domínio vem de WEB_ORIGIN, que precisa apontar (DNS)
+  # para este servidor antes da primeira subida. Certificados ficam no volume caddy_data.
+  caddy:
+    <<: *logging
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    environment:
+      WEB_ORIGIN: ${WEB_ORIGIN:?Defina a origem HTTPS pública sem barra final}
+    ports:
+      - '${PUBLIC_BIND:-0.0.0.0}:80:80'
+      - '${PUBLIC_BIND:-0.0.0.0}:443:443'
+      - '${PUBLIC_BIND:-0.0.0.0}:443:443/udp'
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ${DOWNLOADS_DIR:-/srv/estoque/downloads}:/srv/downloads:ro
+    depends_on:
+      frontend: { condition: service_healthy }
+    networks: [edge]
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+networks:
+  private:
+  edge:
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?Informe o arquivo com a senha administrativa do PostgreSQL}
+  database_url:
+    file: ${DATABASE_URL_FILE:?Informe o arquivo com a conexão app_runtime}
+  auth_database_url:
+    file: ${AUTH_DATABASE_URL_FILE:?Informe o arquivo com a conexão app_auth}
+  migration_database_url:
+    file: ${MIGRATION_DATABASE_URL_FILE:?Informe o arquivo administrativo separado}
+  jwt_secret:
+    file: ${JWT_SECRET_FILE:?Informe o arquivo JWT com pelo menos 32 bytes aleatórios}
+  smtp_password:
+    file: ${SMTP_PASSWORD_FILE:?Informe o arquivo com a senha de app do SMTP}
+  pagonet_token:
+    file: ${PAGONET_TOKEN_FILE:?Informe o arquivo com o token da Bridge da Pagonet}

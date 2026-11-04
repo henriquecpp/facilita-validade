@@ -1,0 +1,23 @@
+# Porta de entrada pública da produção: certificado HTTPS automático (Let's Encrypt), renovado
+# sozinho, e redirecionamento de http:// para https://. Tudo segue para o painel (Nginx), que
+# serve o SPA e encaminha /api/ para a API. WEB_ORIGIN é a origem pública, por exemplo
+# https://validade.suaempresa.com.br.
+{
+	admin off
+	# Só vale para teste local (https://algo.localhost, certificado da CA interna do Caddy).
+	skip_install_trust
+}
+
+{$WEB_ORIGIN} {
+	# APK do coletor para instalar pelo navegador do aparelho: /srv/estoque/downloads no host.
+	handle_path /downloads/* {
+		root * /srv/downloads
+		@apk path *.apk
+		header @apk Content-Type application/vnd.android.package-archive
+		header Cache-Control no-store
+		file_server
+	}
+	handle {
+		reverse_proxy frontend:8080
+	}
+}
