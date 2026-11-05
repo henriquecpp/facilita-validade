@@ -1,0 +1,77 @@
+# Homologação HTTPS: ngrok encaminha para http://127.0.0.1:5188.
+# Use junto do Compose local: -f compose.yaml -f infra/compose.pilot.yaml.
+# Prepare frontend/dist e as migrations antes de iniciar pilot-api, pilot-worker e pilot-web.
+# Os serviços api/frontend existentes e suas portas permanecem independentes.
+#
+# `pnpm pilot` faz tudo (scripts/pilot.mjs): compila o painel se preciso, sobe estes serviços e
+# abre o ngrok numa janela própria. PILOT_WEB_ORIGIN (o domínio fixo do ngrok) e
+# PILOT_JWT_SECRET vêm do .env.
+# O APK do coletor para este túnel: gradlew :app:assembleDebug -PapiBaseUrl=<origem>/api/v1/.
+services:
+  pilot-api:
+    extends:
+      # Caminho relativo ao primeiro arquivo (-f compose.yaml), não a este override.
+      file: compose.yaml
+      service: api
+    ports: !reset []
+    environment:
+      NODE_ENV: production
+      WEB_ORIGIN: ${PILOT_WEB_ORIGIN:?Informe a origem HTTPS exata do túnel, sem barra final}
+      JWT_SECRET: ${PILOT_JWT_SECRET:?Informe um segredo exclusivo da homologação}
+      TRUST_PROXY_HOPS: '0'
+    # Não executar migrations nem seed implicitamente ao iniciar a homologação.
+    depends_on: !override
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # Varreduras e envios agendados (alertas de validade, push, resumo diário, Pagonet). Sem ele
+  # a homologação só manda a notificação de teste. Mesma configuração de push da pilot-api.
+  pilot-worker:
+    extends:
+      file: compose.yaml
+      service: worker
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: ${PILOT_JWT_SECRET:?Informe um segredo exclusivo da homologação}
+    depends_on: !override
+      postgres: { condition: service_healthy }
+      mailpit: { condition: service_started }
+
+  pilot-web:
+    image: nginxinc/nginx-unprivileged:1.28.2-alpine
+    user: '101:101'
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    entrypoint: [nginx]
+    command: ['-g', 'daemon off;']
+    ports:
+      - '127.0.0.1:5188:8080'
+    volumes:
+      - type: bind
+        source: ./frontend/dist
+        target: /usr/share/nginx/html
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./infra/proxy/nginx-pilot.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind: { create_host_path: false }
+    depends_on:
+      pilot-api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 3
