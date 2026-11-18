@@ -1,0 +1,59 @@
+name: Verificação
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Testes de banco sobem o próprio PostgreSQL via Testcontainers (Docker do runner).
+    env:
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+      - run: npm install --global pnpm@12.6.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:integration
+      - run: pnpm contracts:check
+      - run: pnpm build
+      - name: Build das imagens sem publicar
+        run: |
+          docker build -f infra/docker/backend.Dockerfile -t controle-estoque-backend:ci .
+          docker build -f infra/docker/frontend.Dockerfile -t controle-estoque-frontend:ci .
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: SDK utilizado pelo projeto
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Lint, testes e APK debug
+        run: ./mobile/gradlew -p mobile ktlintCheck :core:domain:test :core:network:test :feature:inventory:testDebugUnitTest :app:assembleDebug :app:assembleDemo :app:lintDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-debug-validation
+          retention-days: 7
+          path: |
+            mobile/app/build/outputs/apk/debug/app-debug.apk
+            mobile/app/build/reports/lint-results-debug.*
+            mobile/core/domain/build/test-results/test/*.xml
+            mobile/core/network/build/test-results/test/*.xml
+            mobile/feature/inventory/build/test-results/testDebugUnitTest/*.xml
